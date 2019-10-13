@@ -19,6 +19,9 @@ from utils.UtilsMisc import *
 import utils.UtilsPointcloud as Ptutils
 import utils.ICP as ICP
 
+import OpenGL.GL as gl
+import pangolin
+
 # params
 parser = argparse.ArgumentParser(description='PyICP SLAM arguments')
 
@@ -64,12 +67,29 @@ SCM = ScanContextManager(shape=[args.num_rings, args.num_sectors],
                                         num_candidates=args.num_candidates, 
                                         threshold=args.loop_threshold)
 
+# pangolin init
+pangolin.CreateWindowAndBind('Main', 640, 480)
+gl.glEnable(gl.GL_DEPTH_TEST)
+
+# Define Projection and initial ModelView matrix
+scam = pangolin.OpenGlRenderState(
+    pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 100),
+    pangolin.ModelViewLookAt(-2, 2, -2, 0, 0, 0, pangolin.AxisDirection.AxisZ))
+handler = pangolin.Handler3D(scam)
+
+# Create Interactive View in window
+dcam = pangolin.CreateDisplay()
+dcam.SetBounds(0.0, 1.0, 0.0, 1.0, -640.0/480.0)
+dcam.SetHandler(handler)
+
+global_map = []
+
 # for save the results as a video
 fig_idx = 1
 fig = plt.figure(fig_idx)
 writer = FFMpegWriter(fps=15)
 video_name = args.sequence_idx + "_" + str(args.num_icp_points) + ".mp4"
-num_frames_to_skip_to_show = 5
+num_frames_to_skip_to_show = 50
 num_frames_to_save = np.floor(num_frames/num_frames_to_skip_to_show)
 with writer.saving(fig, video_name, num_frames_to_save): # this video saving part is optional
 
@@ -92,6 +112,7 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
         # calc odometry
         prev_scan_down_pts = Ptutils.random_sampling(prev_scan_pts, num_points=args.num_icp_points)
         odom_transform, _, _ = ICP.icp(curr_scan_down_pts, prev_scan_down_pts, init_pose=icp_initial, max_iterations=20)
+        # print(odom_transform)
 
         # update the current (moved) pose 
         PGM.curr_se3 = np.matmul(PGM.curr_se3, odom_transform)
@@ -118,7 +139,7 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
                 PGM.addLoopFactor(loop_transform, loop_idx)
 
                 # 2-2/ graph optimization 
-                PGM.optimizedPoseGraph()
+                PGM.optimizePoseGraph()
 
                 # 2-2/ save optimized poses
                 ResultSaver.saveOptimizedPoseGraphResult(PGM.curr_node_idx, PGM.graph_optimized)
@@ -128,3 +149,27 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
         if(for_idx % num_frames_to_skip_to_show == 0): 
             ResultSaver.vizCurrentTrajectory(fig_idx=fig_idx)
             writer.grab_frame()
+
+
+        # # pangolin visualizer
+        # gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        # gl.glClearColor(1.0, 1.0, 1.0, 1.0)
+        # dcam.Activate(scam)
+        
+        # # Render OpenGL Cube
+        # pangolin.glDrawColouredCube()
+
+        # # Draw Point Cloud
+        # global_poses = PGM.getGraphNodePoseList()
+        # curr_transform= PGM.curr_se3
+        # curr_scan_down_pts = Ptutils.random_sampling(curr_scan_down_pts, num_points=100)
+        # temp = np.ones((100,4))
+        # temp[:,0:3] = curr_scan_down_pts
+        # transformed = curr_transform.dot(temp.T)*0.1
+        # global_map.append(transformed.T)
+        # for points in global_map:
+        #     gl.glPointSize(2)
+        #     gl.glColor3f(1.0, 0.0, 0.0)
+        #     pangolin.DrawPoints(points)
+
+        # pangolin.FinishFrame()
