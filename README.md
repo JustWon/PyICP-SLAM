@@ -22,6 +22,7 @@ Full-python LiDAR SLAM.
        -  Reverse loop detection is supported.
     3. Back-end (graph optimizer): [miniSAM](https://github.com/dongjing3309/minisam)
        - Python API
+    4. 3D visualization: [Python binding of Pangolin](https://github.com/uoip/pangolin)
 
 
 ### Features
