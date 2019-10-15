@@ -65,7 +65,7 @@ class PoseGraphManager:
         
         graph_node_pose_list = []
         if (self.graph_optimized is not None):
-            for idx in range(self.curr_node_idx):
+            for idx in range(self.curr_node_idx-1):
                 curr_se3 = np.eye(4)
                 pose_trans, pose_rot = getGraphNodePose(self.graph_optimized, idx)
                 curr_se3[:3, :3] = pose_rot

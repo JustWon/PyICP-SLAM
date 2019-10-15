@@ -19,6 +19,8 @@ from utils.UtilsMisc import *
 import utils.UtilsPointcloud as Ptutils
 import utils.ICP as ICP
 
+
+# DongwonShin: for 3D visualization
 import OpenGL.GL as gl
 import pangolin
 
@@ -67,14 +69,14 @@ SCM = ScanContextManager(shape=[args.num_rings, args.num_sectors],
                                         num_candidates=args.num_candidates, 
                                         threshold=args.loop_threshold)
 
-# pangolin init
+# DongwonShin: Pangolin init
 pangolin.CreateWindowAndBind('Main', 640, 480)
 gl.glEnable(gl.GL_DEPTH_TEST)
 
 # Define Projection and initial ModelView matrix
 scam = pangolin.OpenGlRenderState(
     pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 100),
-    pangolin.ModelViewLookAt(-2, 2, -2, 0, 0, 0, pangolin.AxisDirection.AxisZ))
+    pangolin.ModelViewLookAt(0, 0, 10, 0, 0, 0, pangolin.AxisDirection.AxisX))
 handler = pangolin.Handler3D(scam)
 
 # Create Interactive View in window
@@ -82,14 +84,17 @@ dcam = pangolin.CreateDisplay()
 dcam.SetBounds(0.0, 1.0, 0.0, 1.0, -640.0/480.0)
 dcam.SetHandler(handler)
 
+original_vis_points = []
 global_map = []
+loop_detected = False
+num_vis_points = 5
 
 # for save the results as a video
 fig_idx = 1
 fig = plt.figure(fig_idx)
 writer = FFMpegWriter(fps=15)
 video_name = args.sequence_idx + "_" + str(args.num_icp_points) + ".mp4"
-num_frames_to_skip_to_show = 50
+num_frames_to_skip_to_show = 5
 num_frames_to_save = np.floor(num_frames/num_frames_to_skip_to_show)
 with writer.saving(fig, video_name, num_frames_to_save): # this video saving part is optional
 
@@ -130,6 +135,7 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
             # 1/ loop detection 
             loop_idx, loop_dist, yaw_diff_deg = SCM.detectLoop()
             if(loop_idx == None): # NOT FOUND
+                loop_detected = False
                 pass
             else:
                 print("Loop event detected: ", PGM.curr_node_idx, loop_idx, loop_dist)
@@ -144,6 +150,8 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
                 # 2-2/ save optimized poses
                 ResultSaver.saveOptimizedPoseGraphResult(PGM.curr_node_idx, PGM.graph_optimized)
 
+                loop_detected = True
+
         # save the ICP odometry pose result (no loop closure)
         ResultSaver.saveUnoptimizedPoseGraphResult(PGM.curr_se3, PGM.curr_node_idx) 
         if(for_idx % num_frames_to_skip_to_show == 0): 
@@ -151,25 +159,38 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
             writer.grab_frame()
 
 
-        # # pangolin visualizer
-        # gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-        # gl.glClearColor(1.0, 1.0, 1.0, 1.0)
-        # dcam.Activate(scam)
+        # DongwonShin : Core module for Point cloud visualization
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        gl.glClearColor(0.0, 0.0, 0.0, 1.0)
+        dcam.Activate(scam)
+    
+        # Render OpenGL Cube    
+        pangolin.glDrawColouredCube()        
+
+        # Draw Point Cloud
+        if(loop_detected):
+            # DongwonShin: if the loop is detected, redraw the map from the scratch
+            global_map.clear()
+            pose_list = ResultSaver.pose_list
+            for curr_pose, curr_vis_points in zip(pose_list,original_vis_points):
+                curr_pose = np.reshape(curr_pose,(4,4))
+                transformed_vis_points = curr_pose.dot(curr_vis_points.T)*0.1
+                global_map.append(transformed_vis_points.T)
+
+            loop_detected = False
+        else:
+            # DongwonShin: if not, just update the current point cloud
+            curr_transform= PGM.curr_se3
+            # reduce the number of visualization points
+            curr_scan_down_pts = Ptutils.random_sampling(curr_scan_down_pts, num_points=num_vis_points) 
+            vis_points = np.ones((num_vis_points,4))
+            vis_points[:,0:3] = curr_scan_down_pts
+            original_vis_points.append(vis_points)  # for later use when the loop is detected
+            transformed_vis_points = curr_transform.dot(vis_points.T)*0.1
+            global_map.append(transformed_vis_points.T)
         
-        # # Render OpenGL Cube
-        # pangolin.glDrawColouredCube()
-
-        # # Draw Point Cloud
-        # global_poses = PGM.getGraphNodePoseList()
-        # curr_transform= PGM.curr_se3
-        # curr_scan_down_pts = Ptutils.random_sampling(curr_scan_down_pts, num_points=100)
-        # temp = np.ones((100,4))
-        # temp[:,0:3] = curr_scan_down_pts
-        # transformed = curr_transform.dot(temp.T)*0.1
-        # global_map.append(transformed.T)
-        # for points in global_map:
-        #     gl.glPointSize(2)
-        #     gl.glColor3f(1.0, 0.0, 0.0)
-        #     pangolin.DrawPoints(points)
-
-        # pangolin.FinishFrame()
+        for points in global_map:
+                gl.glPointSize(2)
+                gl.glColor3f(1.0, 0.0, 0.0)
+                pangolin.DrawPoints(points)
+        pangolin.FinishFrame()

@@ -111,4 +111,3 @@ class PoseGraphResultSaver:
         plt.ylabel('y', labelpad=10)
         plt.draw()
         plt.pause(0.01) #is necessary for the plot to update for some reason
-
